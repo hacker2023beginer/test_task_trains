@@ -72,10 +72,10 @@
                 <constraints nullable="false"
                              checkConstraint="status IN ('HELD', 'CONFIRMED', 'CANCELLED', 'EXPIRED')"/>
             </column>
-            <column name="created_at" type="DATETIME(3)" defaultValueComputed="NOW()">
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
                 <constraints nullable="false"/>
             </column>
-            <column name="expires_at" type="DATETIME(3)"/>
+            <column name="expires_at" type="TIMESTAMP"/>
         </createTable>
 
     </changeSet>
@@ -120,7 +120,7 @@
         </insert>
         <insert tableName="trip_rates">
             <column name="trip_id" valueNumeric="101"/>
-            <column name="rate_code" value="STANDART"/>
+            <column name="rate_code" value="STANDARD"/>
             <column name="price" valueNumeric="3500.00"/>
             <column name="available_seats" valueNumeric="50"/>
         </insert>

@@ -1,6 +1,8 @@
 package org.vladproj.zhddrop.entity;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
@@ -8,6 +10,8 @@ import java.time.Instant;
 @Entity
 @EntityListeners(AuditingEntityListener.class)
 @Table(name="reservations")
+@Getter
+@Setter
 public class Reservation {
     private static final long EXPIRED_TIME_SECONDS = 600;
 
