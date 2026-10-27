@@ -1,0 +1,135 @@
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+        http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="1" author="vlad_tsurko">
+        <createTable tableName="stations">
+            <column name="code" type="VARCHAR(3)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(255)"/>
+        </createTable>
+
+        <createTable tableName="trips">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="train_number" type="VARCHAR(5)"/>
+            <column name="from_station_code" type="VARCHAR(3)"/>
+            <column name="to_station_code" type="VARCHAR(3)"/>
+            <column name="departure_time" type="timestamp"/>
+            <column name="arrival_time" type="timestamp"/>
+        </createTable>
+
+        <createTable tableName="trip_rates">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="trip_id" type="INT">
+                <constraints
+                        nullable="false"
+                        foreignKeyName="fk_trips_id"
+                        referencedTableName="trips"
+                        referencedColumnNames="id"/>
+            </column>
+            <column name="rate_code" type="VARCHAR(20)">
+                <constraints nullable="false"
+                             checkConstraint="rate_code IN ('PROMO', 'STANDARD')"/>
+            </column>
+            <column name="price" type="decimal(7,2)">
+                <constraints nullable="false" checkConstraint="price >= 0"/>
+            </column>
+            <column name="available_seats" type="int">
+                <constraints nullable="false" checkConstraint="available_seats >= 0"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="reservations">
+            <column name="id" type="INT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="trip_id" type="INT">
+                <constraints
+                        nullable="false"
+                        foreignKeyName="fk_trips_id"
+                        referencedTableName="trips"
+                        referencedColumnNames="id"/>
+            </column>
+            <column name="rate_code" type="VARCHAR(20)">
+                <constraints nullable="false"
+                             checkConstraint="rate_code IN ('PROMO', 'STANDARD')"/>
+            </column>
+            <column name="passenger_count" type="int">
+                <constraints nullable="false" checkConstraint="passenger_count > 0"/>
+            </column>
+            <column name="total_price" type="decimal(7,2)">
+                <constraints nullable="false" checkConstraint="total_price > 0"/>
+            </column>
+            <column name="status" type="VARCHAR(20)">
+                <constraints nullable="false"
+                             checkConstraint="status IN ('HELD', 'CONFIRMED', 'CANCELLED', 'EXPIRED')"/>
+            </column>
+            <column name="created_at" type="DATETIME(3)" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="DATETIME(3)"/>
+        </createTable>
+
+    </changeSet>
+
+    <changeSet id="insert-demo-data" author="vlad_tsurko">
+        <insert tableName="stations">
+            <column name="code" value="MSK"/>
+            <column name="name" value="Москва"/>
+        </insert>
+        <insert tableName="stations">
+            <column name="code" value="SPB"/>
+            <column name="name" value="Санкт-Петербург"/>
+        </insert>
+        <insert tableName="stations">
+            <column name="code" value="NSK"/>
+            <column name="name" value="Новосибирск"/>
+        </insert>
+
+        <insert tableName="trips">
+            <column name="id" valueNumeric="101"/>
+            <column name="train_number" value="002A"/>
+            <column name="from_station_code" value="MSK"/>
+            <column name="to_station_code" value="SPB"/>
+            <column name="departure_time" value="2026-11-05T08:00:00"/>
+            <column name="arrival_time" value="2026-11-05T12:00:00"/>
+        </insert>
+
+        <insert tableName="trips">
+            <column name="id" valueNumeric="102"/>
+            <column name="train_number" value="004B"/>
+            <column name="from_station_code" value="MSK"/>
+            <column name="to_station_code" value="SPB"/>
+            <column name="departure_time" value="2025-01-01T10:00:00"/>
+            <column name="arrival_time" value="2025-01-01T14:00:00"/>
+        </insert>
+
+        <insert tableName="trip_rates">
+            <column name="trip_id" valueNumeric="101"/>
+            <column name="rate_code" value="PROMO"/>
+            <column name="price" valueNumeric="1500.00"/>
+            <column name="available_seats" valueNumeric="2"/>
+        </insert>
+        <insert tableName="trip_rates">
+            <column name="trip_id" valueNumeric="101"/>
+            <column name="rate_code" value="STANDART"/>
+            <column name="price" valueNumeric="3500.00"/>
+            <column name="available_seats" valueNumeric="50"/>
+        </insert>
+
+        <insert tableName="trip_rates">
+            <column name="trip_id" valueNumeric="102"/>
+            <column name="rate_code" value="PROMO"/>
+            <column name="price" valueNumeric="1200.00"/>
+            <column name="available_seats" valueNumeric="10"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>
