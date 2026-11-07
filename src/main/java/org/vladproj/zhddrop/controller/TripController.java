@@ -3,9 +3,9 @@ package org.vladproj.zhddrop.controller;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.vladproj.zhddrop.dto.ReservationRequest;
+import org.vladproj.zhddrop.dto.ReservationResponse;
 import org.vladproj.zhddrop.dto.TripSearchResponse;
 import org.vladproj.zhddrop.entity.Station;
 import org.vladproj.zhddrop.entity.StationCode;
@@ -29,5 +29,34 @@ public class TripController {
         return ResponseEntity
             .status(HttpStatus.OK)
             .body(tripService.searchAvailableTrips(stationFrom, stationTo, date, passengers));
+    }
+
+//    @PostMapping("/api/reservations")
+//    public ResponseEntity<ReservationResponse> reserveTrip(@RequestBody ReservationRequest request){
+//        ReservationResponse response = tripService.reserveTrip(request.getId(), request.getRateCode(), request.getPassengers());
+//        return ResponseEntity
+//            .status(HttpStatus.CREATED)
+//            .body(response);
+//    }
+
+//    @GetMapping("/api/reservations/{id}")
+//    public ResponseEntity<ReservationResponse> getReservationById(@PathVariable Integer id){
+//
+//    }
+
+//    @PutMapping("/api/reservations/confirm")
+//    public ResponseEntity<Void> confirmReservation(@RequestBody ReservationRequest request) {
+//
+//        return ResponseEntity
+//            .status(HttpStatus.OK)
+//            .build();
+//    }
+
+    @PutMapping("/api/reservations/cancel")
+    public ResponseEntity<Void> cancelReservation(@RequestBody ReservationRequest request) {
+
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .build();
     }
 }
