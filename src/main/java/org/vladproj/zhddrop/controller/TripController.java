@@ -31,32 +31,28 @@ public class TripController {
             .body(tripService.searchAvailableTrips(stationFrom, stationTo, date, passengers));
     }
 
-//    @PostMapping("/api/reservations")
-//    public ResponseEntity<ReservationResponse> reserveTrip(@RequestBody ReservationRequest request){
-//        ReservationResponse response = tripService.reserveTrip(request.getId(), request.getRateCode(), request.getPassengers());
-//        return ResponseEntity
-//            .status(HttpStatus.CREATED)
-//            .body(response);
-//    }
-
-//    @GetMapping("/api/reservations/{id}")
-//    public ResponseEntity<ReservationResponse> getReservationById(@PathVariable Integer id){
-//
-//    }
-
-//    @PutMapping("/api/reservations/confirm")
-//    public ResponseEntity<Void> confirmReservation(@RequestBody ReservationRequest request) {
-//
-//        return ResponseEntity
-//            .status(HttpStatus.OK)
-//            .build();
-//    }
-
-    @PutMapping("/api/reservations/cancel")
-    public ResponseEntity<Void> cancelReservation(@RequestBody ReservationRequest request) {
-
+    @PostMapping("/api/reservations")
+    public ResponseEntity<ReservationResponse> reserveTrip(@RequestBody ReservationRequest request){
+        ReservationResponse response = tripService.reserveTrip(request.getId(), request.getRateCode(), request.getPassengers());
         return ResponseEntity
-            .status(HttpStatus.OK)
-            .build();
+            .status(HttpStatus.CREATED)
+            .body(response);
+    }
+
+    @GetMapping("/api/reservations/{id}")
+    public ResponseEntity<ReservationResponse> getReservationById(@PathVariable Integer id){
+        return ResponseEntity.ok(tripService.getReservationById(id));
+    }
+
+    @PutMapping("/api/reservations/{id}/confirm")
+    public ResponseEntity<Void> confirmReservation(@PathVariable Integer id) {
+        tripService.confirmReservation(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/api/reservations/{id}/cancel")
+    public ResponseEntity<Void> cancelReservation(@PathVariable Integer id) {
+        tripService.cancelReservation(id);
+        return ResponseEntity.ok().build();
     }
 }

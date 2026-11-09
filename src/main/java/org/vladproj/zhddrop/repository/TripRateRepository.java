@@ -14,4 +14,6 @@ public interface TripRateRepository extends JpaRepository<TripRate, Integer> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT tr FROM TripRate tr WHERE tr.trip.id = :tripId AND tr.rateCode = :rateCode")
     Optional<TripRate> findForUpdate(@Param("tripId") Integer tripId, @Param("rateCode") RateCode rateCode);
+
+    Optional<TripRate> getTripRateByTrip_IdAndRateCode(Integer id, RateCode rateCode);
 }
