@@ -1,15 +1,16 @@
 package org.vladproj.zhddrop.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.Setter;
 import org.vladproj.zhddrop.entity.RateCode;
 
 import java.math.BigDecimal;
 
 @Getter
-@Setter
+@AllArgsConstructor
 public class TripRateResponse {
-    private RateCode rateCode;
+
+    private RateCode fareCode;
 
     private BigDecimal price;
 

@@ -148,4 +148,59 @@
             <column name="available_seats" valueNumeric="3"/>
         </insert>
     </changeSet>
+
+    <changeSet id="insert_new_indexes" author="Vladislav TS">
+        <createIndex tableName="trips" indexName="idx_fk_from_station">
+            <column name="from_station_code"/>
+        </createIndex>
+        <createIndex tableName="trips" indexName="idx_fk_to_station">
+            <column name="to_station_code"/>
+        </createIndex>
+        <createIndex tableName="reservations" indexName="idx_status">
+            <column name="status"/>
+        </createIndex>
+        <createIndex tableName="reservations" indexName="idx_expires_at">
+            <column name="expires_at"/>
+        </createIndex>
+        <createIndex tableName="trip_rates" indexName="idx_trip_id">
+            <column name="trip_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="4-unique-trip-rate" author="vlad_tsurko">
+        <addUniqueConstraint tableName="trip_rates"
+                             columnNames="trip_id, rate_code"
+                             constraintName="uq_trip_rates_trip_id_rate_code"/>
+    </changeSet>
+
+    <changeSet id="5-money-precision" author="vlad_tsurko">
+        <modifyDataType tableName="trip_rates" columnName="price" newDataType="decimal(10,2)"/>
+        <modifyDataType tableName="reservations" columnName="total_price" newDataType="decimal(10,2)"/>
+    </changeSet>
+
+    <changeSet id="7-demo-trips-in-future" author="vlad_tsurko" dbms="postgresql">
+        <sql>
+            UPDATE trips
+               SET departure_time = (CURRENT_DATE + 1)::timestamp + TIME '08:00',
+                   arrival_time   = (CURRENT_DATE + 1)::timestamp + TIME '12:00'
+             WHERE id = 101;
+
+            UPDATE trips
+               SET departure_time = (CURRENT_DATE + 2)::timestamp + TIME '10:00',
+                   arrival_time   = (CURRENT_DATE + 2)::timestamp + TIME '14:00'
+             WHERE id = 102;
+
+            UPDATE trips
+               SET departure_time = (CURRENT_DATE + 3)::timestamp + TIME '20:00',
+                   arrival_time   = (CURRENT_DATE + 3)::timestamp + TIME '23:00'
+             WHERE id = 103;
+        </sql>
+        <rollback>
+            <sql>
+                UPDATE trips SET departure_time = '2026-11-05T08:00:00', arrival_time = '2026-11-05T12:00:00' WHERE id = 101;
+                UPDATE trips SET departure_time = '2025-01-01T10:00:00', arrival_time = '2025-01-01T14:00:00' WHERE id = 102;
+                UPDATE trips SET departure_time = '2026-11-09T20:00:00', arrival_time = '2026-11-09T23:00:00' WHERE id = 103;
+            </sql>
+        </rollback>
+    </changeSet>
 </databaseChangeLog>

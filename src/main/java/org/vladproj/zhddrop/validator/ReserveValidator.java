@@ -1,18 +1,17 @@
 package org.vladproj.zhddrop.validator;
 
 import org.springframework.stereotype.Component;
-import org.vladproj.zhddrop.exception.ReserveValidatorException;
+import org.vladproj.zhddrop.exception.ConflictException;
 
 import java.time.Instant;
-import java.time.ZoneId;
 
 @Component
 public class ReserveValidator {
-    public void isOverallPassengers(Integer availablePassengers, Integer reservePassengers) {
-        if(reservePassengers.equals(0) || availablePassengers.compareTo(reservePassengers) < 0) throw new ReserveValidatorException("Not enough available seats");
+
+    public void requireNotDeparted(Instant departureTime, Instant now) {
+        if (departureTime == null || !departureTime.isAfter(now)) {
+            throw new ConflictException("TRIP_ALREADY_DEPARTED", "Trip has already departed and cannot be reserved");
+        }
     }
 
-    public void isMatchedByDate(Instant departureDate,Instant currentDate) {
-        if (departureDate.isBefore(currentDate)) throw new ReserveValidatorException("Current date bigger than departure date");
-    }
 }

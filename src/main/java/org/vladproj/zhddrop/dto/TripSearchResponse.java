@@ -1,19 +1,20 @@
 package org.vladproj.zhddrop.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.List;
 
 @Getter
-@Setter
+@AllArgsConstructor
 public class TripSearchResponse {
+
     private String trainNumber;
 
     private Instant departureTime;
 
     private Instant arrivalTime;
 
-    private ArrayList<TripRateResponse> tripRates;
+    private List<TripRateResponse> rates;
 }

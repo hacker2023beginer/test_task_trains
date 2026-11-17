@@ -1,16 +1,23 @@
 package org.vladproj.zhddrop.service;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.vladproj.zhddrop.config.ReservationProperties;
+import org.vladproj.zhddrop.dto.ReservationRequest;
 import org.vladproj.zhddrop.dto.ReservationResponse;
+import org.vladproj.zhddrop.dto.TripRateResponse;
 import org.vladproj.zhddrop.dto.TripSearchResponse;
 import org.vladproj.zhddrop.entity.*;
-import org.vladproj.zhddrop.exception.TripServiceException;
-import org.vladproj.zhddrop.mapper.TripMapper;
+import org.springframework.context.ApplicationEventPublisher;
+import org.vladproj.zhddrop.event.TicketConfirmedEvent;
+import org.vladproj.zhddrop.exception.ConflictException;
+import org.vladproj.zhddrop.exception.NotFoundException;
 import org.vladproj.zhddrop.repository.ReservationRepository;
 import org.vladproj.zhddrop.repository.TripRateRepository;
 import org.vladproj.zhddrop.repository.TripRepository;
+import org.vladproj.zhddrop.repository.projection.ExpiredHoldView;
+import org.vladproj.zhddrop.repository.projection.ReservationSeatView;
 import org.vladproj.zhddrop.validator.ReserveValidator;
 
 import java.math.BigDecimal;
@@ -19,149 +26,181 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
-import java.util.StringTokenizer;
-import java.util.stream.Collectors;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class TripService {
-    private static final long RESERVE_TIME_IN_SECONDS = 900;
-    private TripRepository tripRepository;
-    private TripRateRepository tripRateRepository;
-    private ReservationRepository reservationRepository;
-    private ReserveValidator reserveValidator;
-    private TripMapper tripMapper;
 
-    public List<TripSearchResponse> searchAvailableTrips(Station fromStation, Station toStation, LocalDate date, int passengers) {
-        Instant startOfDay = date.atStartOfDay(ZoneId.systemDefault()).toInstant();
-        Instant endOfDay = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).minusNanos(1).toInstant();
-        Instant currentInstant = Instant.now();
+    private final TripRepository tripRepository;
+    private final TripRateRepository tripRateRepository;
+    private final ReservationRepository reservationRepository;
+    private final ReserveValidator reserveValidator;
+    private final ReservationProperties reservationProperties;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional(readOnly = true)
+    public List<TripSearchResponse> searchAvailableTrips(StationCode from, StationCode to, LocalDate date, int passengers) {
+        ZoneId zone = ZoneId.systemDefault();
+        Instant startOfDay = date.atStartOfDay(zone).toInstant();
+        Instant endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant();
 
         List<Trip> trips = tripRepository.findAvailableTrips(
-            fromStation,
-            toStation,
+            from.name(),
+            to.name(),
             startOfDay,
             endOfDay,
-            currentInstant,
+            Instant.now(),
             passengers
         );
 
         return trips.stream()
-            .peek(trip -> {
-                List<TripRate> validRates = trip.getTripRates().stream()
-                    .filter(rate -> rate.getAvailableSeats() >= passengers)
-                    .toList();
-                trip.setTripRates(validRates);
-            })
-
-            .sorted(Comparator.comparing(
-                (Trip trip) -> trip.getTripRates().stream()
-                    .map(TripRate::getPrice)
-                    .min(BigDecimal::compareTo)
-                    .orElse(BigDecimal.ZERO),
-                BigDecimal::compareTo
-            ).thenComparing(Trip::getDepartureTime))
-            .map(trip -> tripMapper.toResponse(trip))
+            .map(trip -> toSearchResponse(trip, passengers))
+            .filter(response -> !response.getRates().isEmpty())
+            .sorted(Comparator.comparing((TripSearchResponse response) -> totalPrice(response, passengers))
+                .thenComparing(TripSearchResponse::getDepartureTime))
             .toList();
     }
 
     @Transactional
-    public ReservationResponse reserveTrip(Integer id, RateCode rateCode, Integer passengers) {
-        Trip trip = tripRepository.findById(id).orElseThrow(() -> new TripServiceException("Trip was not found by this id"));
-        TripRate tripRate = tripRateRepository.findForUpdate(id, rateCode).orElseThrow(() -> new TripServiceException("Trip rate was not found by this code"));
-        reserveValidator.isOverallPassengers(tripRate.getAvailableSeats(), passengers);
-        reserveValidator.isMatchedByDate(trip.getDepartureTime(), Instant.now());
+    public ReservationResponse reserveTrip(ReservationRequest request) {
+        Instant now = Instant.now();
+
+        Trip trip = tripRepository.findById(request.getTripId())
+            .orElseThrow(() -> new NotFoundException(
+                "TRIP_NOT_FOUND", "Trip %d was not found".formatted(request.getTripId())));
+
+        reserveValidator.requireNotDeparted(trip.getDepartureTime(), now);
+
+        BigDecimal price = tripRateRepository.findPrice(trip.getId(), request.getFareCode())
+            .orElseThrow(() -> new NotFoundException(
+                "FARE_NOT_FOUND",
+                "Fare %s is not available for trip %d".formatted(request.getFareCode(), trip.getId())));
+
+        int takenSeats = tripRateRepository.takeSeats(trip.getId(), request.getFareCode(), request.getPassengerCount());
+        if (takenSeats == 0) {
+            throw new ConflictException(
+                "SEATS_NOT_AVAILABLE",
+                "Not enough seats for fare %s on trip %d".formatted(request.getFareCode(), trip.getId()));
+        }
 
         Reservation reservation = new Reservation();
-        Instant reservationDate = Instant.now();
-        reservation.setCreatedAt(reservationDate);
-        reservation.setExpiresAt(reservationDate.plusSeconds(RESERVE_TIME_IN_SECONDS));
-        reservation.setPassengerCount(passengers);
-        reservation.setRateCode(rateCode.name());
-        reservation.setStatus(ReservationStatus.HELD);
-        reservation.setTotalPrice(tripRate.getPrice().multiply(new BigDecimal(passengers)));
         reservation.setTrip(trip);
-        reservationRepository.save(reservation);
+        reservation.setRateCode(request.getFareCode());
+        reservation.setPassengerCount(request.getPassengerCount());
+        reservation.setTotalPrice(price.multiply(BigDecimal.valueOf(request.getPassengerCount())));
+        reservation.setStatus(ReservationStatus.HELD);
+        reservation.setCreatedAt(now);
+        reservation.setExpiresAt(now.plus(reservationProperties.ttl()));
+        reservationRepository.saveAndFlush(reservation);
 
-        tripRate.setAvailableSeats(tripRate.getAvailableSeats() - passengers);
-        tripRateRepository.save(tripRate);
-        return new ReservationResponse(trip.getTrainNumber(), rateCode.name(), passengers, reservationDate, reservation.getStatus().name());
+        return ReservationResponse.from(reservation);
     }
 
     @Transactional
     public void cancelReservation(Integer reservationId) {
-        Reservation reservation = reservationRepository.findById(reservationId)
-            .orElseThrow(() -> new TripServiceException("Reservation not found"));
+        ReservationSeatView view = reservationRepository.findSeatView(reservationId)
+            .orElseThrow(() -> reservationNotFound(reservationId));
 
-        if (reservation.getStatus() != ReservationStatus.HELD) {
-            throw new TripServiceException("Only HELD reservations can be cancelled");
+        int updated = reservationRepository.updateStatus(
+            reservationId, ReservationStatus.HELD, ReservationStatus.CANCELLED);
+
+        if (updated == 0) {
+            ReservationStatus current = reservationRepository.findStatusById(reservationId)
+                .orElseThrow(() -> reservationNotFound(reservationId));
+            throw new ConflictException(
+                "RESERVATION_NOT_HELD",
+                "Only HELD reservations can be cancelled, current status is %s".formatted(current));
         }
 
-        reservation.setStatus(ReservationStatus.CANCELLED);
-        reservationRepository.save(reservation);
+        tripRateRepository.releaseSeats(view.getTripId(), view.getRateCode(), view.getPassengerCount());
+    }
 
-        TripRate tripRate = tripRateRepository.getTripRateByTrip_IdAndRateCode(
-            reservation.getTrip().getId(),
-            RateCode.valueOf(reservation.getRateCode())
-        ).orElseThrow(() -> new TripServiceException("Trip rate not found"));
+    @Transactional(noRollbackFor = ConflictException.class)
+    public void confirmReservation(Integer reservationId) {
+        Instant now = Instant.now();
 
-        tripRate.setAvailableSeats(tripRate.getAvailableSeats() + reservation.getPassengerCount());
-        tripRateRepository.save(tripRate);
+        ReservationSeatView view = reservationRepository.findSeatView(reservationId)
+            .orElseThrow(() -> reservationNotFound(reservationId));
+
+        int confirmed = reservationRepository.updateStatusIfNotExpired(
+            reservationId, ReservationStatus.HELD, ReservationStatus.CONFIRMED, now);
+
+        if (confirmed == 1) {
+            eventPublisher.publishEvent(new TicketConfirmedEvent(
+                reservationId,
+                view.getTripId(),
+                view.getTrainNumber(),
+                view.getRateCode(),
+                view.getPassengerCount(),
+                view.getTotalPrice(),
+                now));
+            return;
+        }
+
+        ReservationStatus current = reservationRepository.findStatusById(reservationId)
+            .orElseThrow(() -> reservationNotFound(reservationId));
+
+        if (current == ReservationStatus.HELD) {
+            if (reservationRepository.updateStatus(reservationId, ReservationStatus.HELD, ReservationStatus.EXPIRED) == 1) {
+                tripRateRepository.releaseSeats(view.getTripId(), view.getRateCode(), view.getPassengerCount());
+            }
+            throw new ConflictException(
+                "RESERVATION_EXPIRED", "Reservation %d has expired and cannot be confirmed".formatted(reservationId));
+        }
+
+        throw new ConflictException(
+            "RESERVATION_NOT_HELD",
+            "Only HELD reservations can be confirmed, current status is %s".formatted(current));
     }
 
     @Transactional
-    public void expireHoldReservations() {
+    public int expireHoldReservations() {
         Instant now = Instant.now();
-        List<Reservation> expiredReservations = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.HELD, now);
+        List<ExpiredHoldView> holds = reservationRepository.findExpiredHolds(ReservationStatus.HELD, now);
 
-        for (Reservation reservation : expiredReservations) {
-            reservation.setStatus(ReservationStatus.EXPIRED);
-            reservationRepository.save(reservation);
-
-            tripRateRepository.getTripRateByTrip_IdAndRateCode(
-                reservation.getTrip().getId(),
-                RateCode.valueOf(reservation.getRateCode())
-            ).ifPresent(tripRate -> {
-                tripRate.setAvailableSeats(tripRate.getAvailableSeats() + reservation.getPassengerCount());
-                tripRateRepository.save(tripRate);
-            });
+        int expired = 0;
+        for (ExpiredHoldView hold : holds) {
+            int updated = reservationRepository.updateStatus(
+                hold.getId(), ReservationStatus.HELD, ReservationStatus.EXPIRED);
+            if (updated == 1) {
+                tripRateRepository.releaseSeats(hold.getTripId(), hold.getRateCode(), hold.getPassengerCount());
+                expired++;
+            }
         }
+        return expired;
     }
 
+    @Transactional(readOnly = true)
     public ReservationResponse getReservationById(Integer id) {
         Reservation reservation = reservationRepository.findById(id)
-            .orElseThrow(() -> new TripServiceException("Reservation was not found by this id"));
-        if (reservation.getStatus() == ReservationStatus.HELD && reservation.getExpiresAt().isBefore(Instant.now())) {
-            reservation.setStatus(ReservationStatus.EXPIRED);
-            reservationRepository.save(reservation);
-        }
+            .orElseThrow(() -> reservationNotFound(id));
+        return ReservationResponse.from(reservation);
+    }
 
-        return new ReservationResponse(
-            reservation.getTrip().getTrainNumber(),
-            reservation.getRateCode(),
-            reservation.getPassengerCount(),
-            reservation.getCreatedAt(),
-            reservation.getStatus().name()
+    private static NotFoundException reservationNotFound(Integer id) {
+        return new NotFoundException("RESERVATION_NOT_FOUND", "Reservation %d was not found".formatted(id));
+    }
+
+    private static TripSearchResponse toSearchResponse(Trip trip, int passengers) {
+        List<TripRateResponse> rates = trip.getTripRates().stream()
+            .filter(rate -> rate.getAvailableSeats() >= passengers)
+            .map(rate -> new TripRateResponse(rate.getRateCode(), rate.getPrice(), rate.getAvailableSeats()))
+            .sorted(Comparator.comparing(TripRateResponse::getPrice))
+            .toList();
+
+        return new TripSearchResponse(
+            trip.getTrainNumber(),
+            trip.getDepartureTime(),
+            trip.getArrivalTime(),
+            rates
         );
     }
 
-    @Transactional
-    public void confirmReservation(Integer reservationId) {
-        Reservation reservation = reservationRepository.findById(reservationId)
-            .orElseThrow(() -> new TripServiceException("Reservation was not found"));
-
-        if (reservation.getStatus() != ReservationStatus.HELD) {
-            throw new TripServiceException("Only HELD reservations can be confirmed");
-        }
-
-        if (reservation.getExpiresAt().isBefore(Instant.now())) {
-            reservation.setStatus(ReservationStatus.EXPIRED);
-            reservationRepository.save(reservation);
-            throw new TripServiceException("Reservation has expired and cannot be confirmed");
-        }
-
-        reservation.setStatus(ReservationStatus.CONFIRMED);
-        reservationRepository.save(reservation);
+    private static BigDecimal totalPrice(TripSearchResponse response, int passengers) {
+        return response.getRates().stream()
+            .map(TripRateResponse::getPrice)
+            .min(Comparator.naturalOrder())
+            .orElse(BigDecimal.ZERO)
+            .multiply(BigDecimal.valueOf(passengers));
     }
 }
